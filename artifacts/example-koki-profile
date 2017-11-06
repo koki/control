@@ -1,0 +1,3 @@
+# Environment variables for customizing koki cli
+export KOKI_SIDECAR_IMAGE=koki/sidecar:latest
+export KOKI_CONTROLLER_IMAGE=koki/controller:latest

@@ -1,0 +1,10 @@
+#!/usr/bin/env sh
+
+set -ax
+set -e
+
+SCRIPTS_DIR=$(dirname $0)
+
+cd $SCRIPTS_DIR/..
+
+CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o templates
