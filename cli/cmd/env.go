@@ -7,6 +7,7 @@ import (
 	"github.com/koki/control/cli/kubeclient"
 	"github.com/koki/control/pkg/koki"
 	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/rest"
 )
 
 type Env struct {
@@ -15,6 +16,7 @@ type Env struct {
 	ControllerImage string
 	SidecarImage    string
 	Client          *kubernetes.Clientset
+	Config          *rest.Config
 }
 
 func SidecarPortFlag() *int {
@@ -36,7 +38,7 @@ func EnvFromFlags() (*Env, error) {
 	sidecarImage := SidecarImageFlag()
 	flag.Parse()
 
-	namespace, client, err := kubeclient.GetClient(*kubeconfig)
+	namespace, config, client, err := kubeclient.GetClient(*kubeconfig)
 	if err != nil {
 		return nil, err
 	}
@@ -47,6 +49,7 @@ func EnvFromFlags() (*Env, error) {
 		ControllerImage: *controllerImage,
 		SidecarImage:    *sidecarImage,
 		Client:          client,
+		Config:          config,
 	}
 
 	if len(env.ControllerImage) == 0 {

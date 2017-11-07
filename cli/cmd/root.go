@@ -25,7 +25,21 @@ var controllerCmd = &cobra.Command{
 }
 
 var createCmd = &cobra.Command{
-	Use:   "create <pod.yaml>",
+	Use:   "create <resource.yaml>",
+	Short: "create a plain kubernetes resource from koki shorthand",
+	Args:  cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		env, err := EnvFromFlags()
+		if err != nil {
+			return err
+		}
+
+		return CreateFromShortFile(env, args[0])
+	},
+}
+
+var createAppCmd = &cobra.Command{
+	Use:   "create-app <pod.yaml>",
 	Short: "create a koki app from a pod",
 	Args:  cobra.MinimumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -43,8 +57,8 @@ var createCmd = &cobra.Command{
 	},
 }
 
-var deleteCmd = &cobra.Command{
-	Use:   "delete <pod.yaml>",
+var deleteAppCmd = &cobra.Command{
+	Use:   "delete-app <pod.yaml>",
 	Short: "delete the koki app for a pod (if it exists)",
 	Args:  cobra.MinimumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -76,5 +90,5 @@ var purgeCmd = &cobra.Command{
 }
 
 func init() {
-	RootCmd.AddCommand(controllerCmd, createCmd, deleteCmd, purgeCmd)
+	RootCmd.AddCommand(controllerCmd, createAppCmd, deleteAppCmd, purgeCmd, createCmd)
 }
