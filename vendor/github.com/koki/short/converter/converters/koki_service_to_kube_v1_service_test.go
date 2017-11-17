@@ -8,9 +8,26 @@ import (
 	"k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 
-	"github.com/koki/short/types"
 	"github.com/kr/pretty"
+
+	"github.com/koki/short/types"
+	"github.com/koki/short/util"
+	"github.com/koki/short/util/intbool"
 )
+
+var httpServicePort = types.ServicePort{
+	Expose:  80,
+	PodPort: util.IntOrStringPtr(intstr.FromInt(8080)),
+}
+
+var httpNamedServicePort = types.NamedServicePort{
+	Name: "http",
+	Port: types.ServicePort{
+		Expose:  80,
+		PodPort: util.IntOrStringPtr(intstr.FromInt(8080)),
+	},
+	NodePort: 999,
+}
 
 var s0 = &types.ServiceWrapper{
 	Service: types.Service{
@@ -23,65 +40,54 @@ var s1 = &types.ServiceWrapper{
 	Service: types.Service{
 		Name:    "example",
 		Version: "v1",
-		PodLabels: map[string]string{
+		Selector: map[string]string{
 			"labelKey": "labelValue",
 		},
-		ExternalIPs: []types.IPAddr{types.IPAddr("1.1.1.1")},
-		Port: &types.ServicePort{
-			Expose:  80,
-			PodPort: intstr.FromInt(8080),
-		},
+		Type:             types.ClusterIPServiceTypeDefault,
+		ExternalIPs:      []types.IPAddr{types.IPAddr("1.1.1.1")},
+		Port:             &httpServicePort,
 		ClusterIP:        types.ClusterIPAddr(types.IPAddr("1.1.1.10")),
-		ClientIPAffinity: types.ClientIPAffinityDefault(),
+		ClientIPAffinity: nil,
 	}}
 
 var s2 = &types.ServiceWrapper{
 	Service: types.Service{
 		Name:    "example",
 		Version: "v1",
-		PodLabels: map[string]string{
+		Selector: map[string]string{
 			"labelKey": "labelValue",
 		},
+		Type:        types.ClusterIPServiceTypeNodePort,
 		ExternalIPs: []types.IPAddr{types.IPAddr("1.1.1.1")},
-		Ports: map[string]types.ServicePort{
-			"http": types.ServicePort{
-				Expose:   80,
-				PodPort:  intstr.FromInt(8080),
-				NodePort: 999,
-			},
+		Ports: []types.NamedServicePort{
+			httpNamedServicePort,
 		},
 		ClusterIP:        types.ClusterIPAddr(types.IPAddr("1.1.1.10")),
-		ClientIPAffinity: types.ClientIPAffinityDefault(),
+		ClientIPAffinity: intbool.FromBool(true),
 	}}
 
 var s3 = &types.ServiceWrapper{
 	Service: types.Service{
 		Name:    "example",
 		Version: "v1",
-		PodLabels: map[string]string{
+		Selector: map[string]string{
 			"labelKey": "labelValue",
 		},
+		Type:        types.ClusterIPServiceTypeLoadBalancer,
 		ExternalIPs: []types.IPAddr{types.IPAddr("1.1.1.1")},
-		Ports: map[string]types.ServicePort{
-			"http": types.ServicePort{
-				Expose:   80,
-				PodPort:  intstr.FromInt(8080),
-				NodePort: 999,
-				Protocol: types.ProtocolTCP,
-			},
+		Ports: []types.NamedServicePort{
+			httpNamedServicePort,
 		},
 		ClusterIP:             types.ClusterIPAddr(types.IPAddr("1.1.1.10")),
 		ExternalTrafficPolicy: types.ExternalTrafficPolicyLocal,
-		ClientIPAffinity:      types.ClientIPAffinitySeconds(30),
-		LoadBalancer: &types.LoadBalancer{
-			IP: types.IPAddr("100.1.1.1"),
-			Allowed: []types.CIDR{
-				"0.0.0.0/0",
-			},
-			Ingress: []types.Ingress{
-				types.Ingress{Hostname: "ingressHostname"},
-				types.Ingress{IP: net.ParseIP("1.2.3.4")},
-			},
+		ClientIPAffinity:      intbool.FromInt(300),
+		LoadBalancerIP:        types.IPAddr("100.1.1.1"),
+		Allowed: []types.CIDR{
+			"0.0.0.0/0",
+		},
+		Ingress: []types.Ingress{
+			types.Ingress{Hostname: "ingressHostname"},
+			types.Ingress{IP: net.ParseIP("1.2.3.4")},
 		},
 	}}
 

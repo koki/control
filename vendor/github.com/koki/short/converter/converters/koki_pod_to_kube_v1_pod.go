@@ -2,7 +2,6 @@ package converters
 
 import (
 	"net/url"
-	"strconv"
 	"strings"
 
 	"k8s.io/api/core/v1"
@@ -12,6 +11,7 @@ import (
 	"github.com/koki/short/converter/converters/affinity"
 	"github.com/koki/short/types"
 	"github.com/koki/short/util"
+	"github.com/koki/short/util/floatstr"
 )
 
 func Convert_Koki_Pod_to_Kube_v1_Pod(pod *types.PodWrapper) (*v1.Pod, error) {
@@ -28,6 +28,7 @@ func Convert_Koki_Pod_to_Kube_v1_Pod(pod *types.PodWrapper) (*v1.Pod, error) {
 
 	kubePod.Spec = v1.PodSpec{}
 
+	kubePod.Spec.Volumes = revertVolumes(kokiPod.Volumes)
 	fields := strings.SplitN(kokiPod.Hostname, ".", 2)
 	if len(fields) == 1 {
 		kubePod.Spec.Hostname = kokiPod.Hostname
@@ -172,6 +173,18 @@ func Convert_Koki_Pod_to_Kube_v1_Pod(pod *types.PodWrapper) (*v1.Pod, error) {
 	return kubePod, nil
 }
 
+func revertVolumes(kokiVolumes []types.Volume) []v1.Volume {
+	kubeVolumes := make([]v1.Volume, len(kokiVolumes))
+	for i, kokiVolume := range kokiVolumes {
+		kubeVolumes[i] = v1.Volume{
+			Name:         kokiVolume.Name,
+			VolumeSource: kokiVolume.VolumeSource.VolumeSource,
+		}
+	}
+
+	return kubeVolumes
+}
+
 func revertContainerStatus(container types.Container) (v1.ContainerStatus, error) {
 	var status v1.ContainerStatus
 
@@ -228,7 +241,7 @@ func revertQOSClass(class types.PodQOSClass) (v1.PodQOSClass, error) {
 	if class == types.PodQOSBestEffort {
 		return v1.PodQOSBestEffort, nil
 	}
-	return "", util.TypeValueErrorf(class, "Unexpected value %s", class)
+	return "", util.InvalidInstanceError(class)
 }
 
 func revertPodPhase(phase types.PodPhase) (v1.PodPhase, error) {
@@ -250,7 +263,7 @@ func revertPodPhase(phase types.PodPhase) (v1.PodPhase, error) {
 	if phase == types.PodUnknown {
 		return v1.PodUnknown, nil
 	}
-	return "", util.TypeValueErrorf(phase, "Unexpected value %s", phase)
+	return "", util.InvalidInstanceError(phase)
 }
 
 func revertPodConditions(conditions []types.PodCondition) ([]v1.PodCondition, error) {
@@ -300,7 +313,7 @@ func revertPodConditionType(typ types.PodConditionType) (v1.PodConditionType, er
 	if typ == types.PodReasonUnschedulable {
 		return v1.PodReasonUnschedulable, nil
 	}
-	return "", util.TypeValueErrorf(typ, "Unexpected value %s", typ)
+	return "", util.InvalidInstanceError(typ)
 }
 
 func revertConditionStatus(status types.ConditionStatus) (v1.ConditionStatus, error) {
@@ -316,7 +329,7 @@ func revertConditionStatus(status types.ConditionStatus) (v1.ConditionStatus, er
 	if status == types.ConditionUnknown {
 		return v1.ConditionUnknown, nil
 	}
-	return "", util.TypeValueErrorf(status, "Unexpected value %s", status)
+	return "", util.InvalidInstanceError(status)
 
 }
 
@@ -338,7 +351,7 @@ func revertTolerations(tolerations []types.Toleration) ([]v1.Toleration, error) 
 			kubeToleration.Operator = v1.TolerationOpEqual
 			kubeToleration.Value = fields[1]
 		} else {
-			return nil, util.TypeValueErrorf(toleration, "Unexpected toleration selector %s", toleration.Selector)
+			return nil, util.InvalidInstanceErrorf(toleration, "unexpected toleration selector")
 		}
 
 		if kubeToleration.Value != "" {
@@ -353,10 +366,10 @@ func revertTolerations(tolerations []types.Toleration) ([]v1.Toleration, error) 
 				case "NoExecute":
 					kubeToleration.Effect = v1.TaintEffectNoExecute
 				default:
-					return nil, util.TypeValueErrorf(toleration, "Unexpected toleration selector %s", toleration.Selector)
+					return nil, util.InvalidInstanceErrorf(toleration, "unexpected toleration selector")
 				}
 			} else if len(fields) != 1 {
-				return nil, util.TypeValueErrorf(toleration, "Unexpected toleration effect %s", toleration.Selector)
+				return nil, util.InvalidInstanceErrorf(toleration, "unexpected toleration effect")
 			}
 		}
 
@@ -390,7 +403,7 @@ func revertHostModes(modes []types.HostMode) (net bool, pid bool, ipc bool, err 
 		case types.HostModeIPC:
 			ipc = true
 		default:
-			return false, false, false, util.TypeValueErrorf(modes, "Unexpected host mode value %s", mode)
+			return false, false, false, util.InvalidInstanceError(mode)
 		}
 	}
 
@@ -408,16 +421,14 @@ func revertServiceAccount(account string) (string, *bool, error) {
 		if fields[1] == "auto" {
 			auto = true
 		} else {
-			return "", &auto, util.TypeValueErrorf(account, "Unexpected service account automount value %s", fields[1])
+			return "", &auto, util.InvalidValueErrorf(account, "unexpected service account automount value (%s)", fields[1])
 		}
 		return fields[1], &auto, nil
 	} else if len(fields) == 1 {
 		return fields[0], &auto, nil
-	} else {
-		return "", &auto, util.TypeValueErrorf(account, "Unexpected service account value %s", account)
 	}
 
-	return "", &auto, nil
+	return "", &auto, util.InvalidValueErrorf(account, "unexpected service account automount value")
 }
 
 func revertDNSPolicy(dnsPolicy types.DNSPolicy) (v1.DNSPolicy, error) {
@@ -433,8 +444,7 @@ func revertDNSPolicy(dnsPolicy types.DNSPolicy) (v1.DNSPolicy, error) {
 	if dnsPolicy == types.DNSDefault {
 		return v1.DNSDefault, nil
 	}
-	return "", util.TypeValueErrorf(dnsPolicy, "Unexpected value %s", dnsPolicy)
-
+	return "", util.InvalidInstanceError(dnsPolicy)
 }
 
 func revertAffinity(affinities []types.Affinity) (*v1.Affinity, error) {
@@ -454,7 +464,7 @@ func revertRestartPolicy(policy types.RestartPolicy) (v1.RestartPolicy, error) {
 	if policy == types.RestartPolicyNever {
 		return v1.RestartPolicyNever, nil
 	}
-	return "", util.TypeValueErrorf(policy, "Unexpected restart policy %s", policy)
+	return "", util.InvalidInstanceError(policy)
 }
 
 func revertHostAliases(aliases []string) ([]v1.HostAlias, error) {
@@ -474,7 +484,7 @@ func revertHostAliases(aliases []string) ([]v1.HostAlias, error) {
 				}
 			}
 		} else {
-			return nil, util.TypeValueErrorf(alias, "Unexpected value %s", alias)
+			return nil, util.InvalidInstanceError(alias)
 		}
 		hostAliases = append(hostAliases, hostAlias)
 	}
@@ -485,7 +495,7 @@ func revertKokiContainer(container types.Container) (v1.Container, error) {
 	kubeContainer := v1.Container{}
 
 	kubeContainer.Name = container.Name
-	kubeContainer.Args = container.Args
+	kubeContainer.Args = revertContainerArgs(container.Args)
 	kubeContainer.Command = container.Command
 	kubeContainer.Image = container.Image
 	kubeContainer.WorkingDir = container.WorkingDir
@@ -545,6 +555,18 @@ func revertKokiContainer(container types.Container) (v1.Container, error) {
 	return kubeContainer, nil
 }
 
+func revertContainerArgs(kokiArgs []floatstr.FloatOrString) []string {
+	if kokiArgs == nil {
+		return nil
+	}
+	kubeArgs := make([]string, len(kokiArgs))
+	for i, kokiArg := range kokiArgs {
+		kubeArgs[i] = kokiArg.String()
+	}
+
+	return kubeArgs
+}
+
 func revertSecurityContext(container types.Container) (*v1.SecurityContext, error) {
 	sc := &v1.SecurityContext{}
 
@@ -565,7 +587,7 @@ func revertSecurityContext(container types.Container) (*v1.SecurityContext, erro
 		rw := *container.RW
 
 		if !((!ro && rw) || (!rw && ro)) {
-			return nil, util.TypeValueErrorf(container, "Conflicting value (Read Only) %v and (ReadWrite) %v", ro, rw)
+			return nil, util.InvalidInstanceErrorf(container, "conflicting value (Read Only) %v and (ReadWrite) %v", ro, rw)
 		}
 
 		sc.ReadOnlyRootFilesystem = &ro
@@ -670,7 +692,7 @@ func revertLifecycleAction(action *types.Action) (*v1.Handler, error) {
 		} else if len(fields) == 1 {
 			host = hostPort
 		} else {
-			return nil, util.TypeValueErrorf(action.Net, "Unexpected HostPort %s", action.Net.URL)
+			return nil, util.InvalidInstanceErrorf(action.Net, "unexpected HostPort %s", action.Net.URL)
 		}
 
 		if urlStruct.Scheme == "HTTP" || urlStruct.Scheme == "HTTPS" {
@@ -688,7 +710,7 @@ func revertLifecycleAction(action *types.Action) (*v1.Handler, error) {
 				header := action.Net.Headers[i]
 				fields := strings.Split(header, ":")
 				if len(fields) != 2 {
-					return nil, util.TypeValueErrorf(action.Net, "Unexpected HTTP Header %s", header)
+					return nil, util.InvalidInstanceErrorf(action.Net, "unexpected HTTP Header %s", header)
 				}
 				kubeHeader := v1.HTTPHeader{
 					Name:  fields[0],
@@ -710,7 +732,7 @@ func revertLifecycleAction(action *types.Action) (*v1.Handler, error) {
 				Port: port,
 			}
 		} else {
-			return nil, util.TypeValueErrorf(action.Net, "Unexpected URL Scheme %s", urlStruct.Scheme)
+			return nil, util.InvalidInstanceErrorf(action.Net, "unexpected URL Scheme %s", urlStruct.Scheme)
 		}
 	}
 
@@ -807,7 +829,7 @@ func revertProbe(probe *types.Probe) (*v1.Probe, error) {
 			hostPort := urlStruct.Host
 			fields := strings.Split(hostPort, ":")
 			if len(fields) != 2 && len(fields) != 1 {
-				return nil, util.TypeValueErrorf(urlStruct, "Unexpected value %s", hostPort)
+				return nil, util.InvalidInstanceErrorf(urlStruct, "unrecognized Probe Host")
 			}
 			host := fields[0]
 			port := "80"
@@ -825,7 +847,7 @@ func revertProbe(probe *types.Probe) (*v1.Probe, error) {
 			hostPort := urlStruct.Host
 			fields := strings.Split(hostPort, ":")
 			if len(fields) != 2 && len(fields) != 1 {
-				return nil, util.TypeValueErrorf(urlStruct, "Unexpected value %s", hostPort)
+				return nil, util.InvalidInstanceErrorf(urlStruct, "unrecognized Probe Host")
 			}
 			host := fields[0]
 			port := "80"
@@ -840,7 +862,7 @@ func revertProbe(probe *types.Probe) (*v1.Probe, error) {
 			} else if strings.ToLower(urlStruct.Scheme) == "https" {
 				scheme = v1.URISchemeHTTPS
 			} else {
-				return nil, util.TypeValueErrorf(urlStruct, "Unexpected scheme %s", urlStruct.Scheme)
+				return nil, util.InvalidInstanceErrorf(urlStruct, "unrecognized Probe URL Scheme")
 			}
 
 			kubeProbe.HTTPGet = &v1.HTTPGetAction{
@@ -857,7 +879,7 @@ func revertProbe(probe *types.Probe) (*v1.Probe, error) {
 				h := probe.Net.Headers[i]
 				fields := strings.Split(h, ":")
 				if len(fields) != 2 {
-					return nil, util.TypeValueErrorf(h, "Unexpected value %s", h)
+					return nil, util.InvalidValueErrorf(h, "unrecognized Probe HTTPHeader")
 				}
 				header := v1.HTTPHeader{
 					Name:  fields[0],
@@ -867,7 +889,7 @@ func revertProbe(probe *types.Probe) (*v1.Probe, error) {
 			}
 			kubeProbe.HTTPGet.HTTPHeaders = headers
 		} else {
-			return nil, util.TypeValueErrorf(urlStruct, "Unexpected value %s", probe.Net.URL)
+			return nil, util.InvalidInstanceErrorf(urlStruct, "unrecognized Probe URL")
 		}
 	}
 	return kubeProbe, nil
@@ -926,26 +948,24 @@ func revertEnv(envs []types.Env) ([]v1.EnvVar, []v1.EnvFromSource, error) {
 
 	for i := range envs {
 		e := envs[i]
-		if e.From == "" {
-			fields := strings.Split(string(e.EnvStr), "=")
-			if len(fields) != 2 {
-				return nil, nil, util.TypeValueErrorf(e, "Unexpected value %s", string(e.EnvStr))
-			}
+		if e.Type == types.EnvValType {
 			envVar := v1.EnvVar{
-				Name:  fields[0],
-				Value: fields[1],
+				Name:  e.Val.Key,
+				Value: e.Val.Val,
 			}
 			envVars = append(envVars, envVar)
 			continue
 		}
 
+		from := e.From
+
 		// ResourceFieldRef
-		if strings.Index(e.From, "limits.") == 0 || strings.Index(e.From, "requests.") == 0 {
+		if strings.Index(from.From, "limits.") == 0 || strings.Index(from.From, "requests.") == 0 {
 			envVar := v1.EnvVar{
-				Name: string(e.EnvStr),
+				Name: from.Key,
 				ValueFrom: &v1.EnvVarSource{
 					ResourceFieldRef: &v1.ResourceFieldSelector{
-						Resource: e.From,
+						Resource: from.From,
 					},
 				},
 			}
@@ -954,19 +974,19 @@ func revertEnv(envs []types.Env) ([]v1.EnvVar, []v1.EnvFromSource, error) {
 		}
 
 		// ConfigMapKeyRef or ConfigMapEnvSource
-		if strings.Index(e.From, "config:") == 0 {
-			fields := strings.Split(e.From, ":")
+		if strings.Index(from.From, "config:") == 0 {
+			fields := strings.Split(from.From, ":")
 			if len(fields) == 3 {
 				//ConfigMapKeyRef
 				envVar := v1.EnvVar{
-					Name: string(e.EnvStr),
+					Name: from.Key,
 					ValueFrom: &v1.EnvVarSource{
 						ConfigMapKeyRef: &v1.ConfigMapKeySelector{
 							LocalObjectReference: v1.LocalObjectReference{
 								Name: fields[1],
 							},
 							Key:      fields[2],
-							Optional: e.Required,
+							Optional: from.Required,
 						},
 					},
 				}
@@ -974,62 +994,62 @@ func revertEnv(envs []types.Env) ([]v1.EnvVar, []v1.EnvFromSource, error) {
 			} else if len(fields) == 2 {
 				//ConfigMapEnvSource
 				envVarFromSrc := v1.EnvFromSource{
-					Prefix: string(e.EnvStr),
+					Prefix: from.Key,
 					ConfigMapRef: &v1.ConfigMapEnvSource{
 						LocalObjectReference: v1.LocalObjectReference{
 							Name: fields[1],
 						},
-						Optional: e.Required,
+						Optional: from.Required,
 					},
 				}
 				envsFromSource = append(envsFromSource, envVarFromSrc)
 			} else {
-				return nil, nil, util.TypeValueErrorf(e, "Unexpected value %s", e.From)
+				return nil, nil, util.InvalidInstanceError(e)
 			}
 			continue
 		}
 
 		// SecretKeyRef or SecretEnvSource
-		if strings.Index(e.From, "secret:") == 0 {
-			fields := strings.Split(e.From, ":")
+		if strings.Index(from.From, "secret:") == 0 {
+			fields := strings.Split(from.From, ":")
 			if len(fields) == 3 {
 				//SecretKeyRef
 				envVar := v1.EnvVar{
-					Name: string(e.EnvStr),
+					Name: from.Key,
 					ValueFrom: &v1.EnvVarSource{
 						SecretKeyRef: &v1.SecretKeySelector{
 							LocalObjectReference: v1.LocalObjectReference{
 								Name: fields[1],
 							},
 							Key:      fields[2],
-							Optional: e.Required,
+							Optional: from.Required,
 						},
 					},
 				}
 				envVars = append(envVars, envVar)
 			} else if len(fields) == 2 {
 				envVarFromSrc := v1.EnvFromSource{
-					Prefix: string(e.EnvStr),
+					Prefix: from.Key,
 					SecretRef: &v1.SecretEnvSource{
 						LocalObjectReference: v1.LocalObjectReference{
 							Name: fields[1],
 						},
-						Optional: e.Required,
+						Optional: from.Required,
 					},
 				}
 				envsFromSource = append(envsFromSource, envVarFromSrc)
 			} else {
-				return nil, nil, util.TypeValueErrorf(e, "Unexpected value %s", e.From)
+				return nil, nil, util.InvalidInstanceError(e)
 			}
 			continue
 		}
 
 		// FieldRef
 		envVar := v1.EnvVar{
-			Name: string(e.EnvStr),
+			Name: from.Key,
 			ValueFrom: &v1.EnvVarSource{
 				FieldRef: &v1.ObjectFieldSelector{
-					FieldPath: e.From,
+					FieldPath: from.From,
 				},
 			},
 		}
@@ -1040,37 +1060,23 @@ func revertEnv(envs []types.Env) ([]v1.EnvVar, []v1.EnvFromSource, error) {
 }
 
 func revertExpose(ports []types.Port) ([]v1.ContainerPort, error) {
+	var err error
 	var kubeContainerPorts []v1.ContainerPort
 	for i := range ports {
 		port := ports[i]
 		kubePort := v1.ContainerPort{}
 
 		kubePort.Name = port.Name
-		protocol := v1.ProtocolTCP
-		if port.Protocol == "UDP" {
-			protocol = v1.ProtocolUDP
+		kubePort.Protocol = port.Protocol
+
+		kubePort.HostPort, err = port.HostPortInt()
+		if err != nil {
+			return nil, err
 		}
-		kubePort.Protocol = protocol
-		fields := strings.Split(port.PortMap, ":")
-		if len(fields) == 1 {
-			// Then the value is container port
-			containerPort, err := strconv.ParseInt(port.PortMap, 10, 32)
-			if err != nil {
-				return nil, err
-			}
-			kubePort.ContainerPort = int32(containerPort)
-		} else if len(fields) == 2 {
-			// Then the value is hostPort:containerport
-			hostPort, err := strconv.ParseInt(fields[0], 10, 32)
-			if err != nil {
-				return nil, err
-			}
-			containerPort, err := strconv.ParseInt(fields[1], 10, 32)
-			if err != nil {
-				return nil, err
-			}
-			kubePort.ContainerPort = int32(containerPort)
-			kubePort.HostPort = int32(hostPort)
+
+		kubePort.ContainerPort, err = port.ContainerPortInt()
+		if err != nil {
+			return nil, err
 		}
 
 		kubeContainerPorts = append(kubeContainerPorts, kubePort)

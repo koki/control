@@ -8,8 +8,10 @@ import (
 	"k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
+	"github.com/koki/short/parser/expressions"
 	"github.com/koki/short/types"
 	"github.com/koki/short/util"
+	"github.com/koki/short/util/floatstr"
 )
 
 func Convert_Kube_v1_Pod_to_Koki_Pod(pod *v1.Pod) (*types.PodWrapper, error) {
@@ -22,6 +24,7 @@ func Convert_Kube_v1_Pod_to_Koki_Pod(pod *v1.Pod) (*types.PodWrapper, error) {
 	kokiPod.Labels = pod.Labels
 	kokiPod.Annotations = pod.Annotations
 
+	kokiPod.Volumes = convertVolumes(pod.Spec.Volumes)
 	affinity, err := convertAffinity(pod.Spec)
 	if err != nil {
 		return nil, err
@@ -134,13 +137,29 @@ func Convert_Kube_v1_Pod_to_Koki_Pod(pod *v1.Pod) (*types.PodWrapper, error) {
 	return &types.PodWrapper{Pod: *kokiPod}, nil
 }
 
+func convertVolumes(kubeVolumes []v1.Volume) []types.Volume {
+	kokiVolumes := make([]types.Volume, len(kubeVolumes))
+	for i, kubeVolume := range kubeVolumes {
+		kokiVolumes[i] = types.Volume{
+			VolumeMeta: types.VolumeMeta{
+				Name: kubeVolume.Name,
+			},
+			VolumeSource: types.VolumeSource{
+				VolumeSource: kubeVolume.VolumeSource,
+			},
+		}
+	}
+
+	return kokiVolumes
+}
+
 func convertContainer(container *v1.Container) (*types.Container, error) {
 	kokiContainer := &types.Container{}
 
 	kokiContainer.Name = container.Name
 	kokiContainer.Command = container.Command
 	kokiContainer.Image = container.Image
-	kokiContainer.Args = container.Args
+	kokiContainer.Args = convertContainerArgs(container.Args)
 	kokiContainer.WorkingDir = container.WorkingDir
 
 	pullPolicy, err := convertPullPolicy(container.ImagePullPolicy)
@@ -217,6 +236,18 @@ func convertContainer(container *v1.Container) (*types.Container, error) {
 	return kokiContainer, nil
 }
 
+func convertContainerArgs(kubeArgs []string) []floatstr.FloatOrString {
+	if kubeArgs == nil {
+		return nil
+	}
+	kokiArgs := make([]floatstr.FloatOrString, len(kubeArgs))
+	for i, kubeArg := range kubeArgs {
+		kokiArgs[i] = *floatstr.Parse(kubeArg)
+	}
+
+	return kokiArgs
+}
+
 func convertPullPolicy(pullPolicy v1.PullPolicy) (types.PullPolicy, error) {
 	if pullPolicy == "" {
 		return "", nil
@@ -230,7 +261,7 @@ func convertPullPolicy(pullPolicy v1.PullPolicy) (types.PullPolicy, error) {
 	if pullPolicy == v1.PullIfNotPresent {
 		return types.PullNever, nil
 	}
-	return "", util.TypeValueErrorf(pullPolicy, "Conversion for %s unknown", pullPolicy)
+	return "", util.InvalidInstanceError(pullPolicy)
 }
 
 func convertLifecycle(lifecycle *v1.Lifecycle) (onStart *types.Action, preStop *types.Action, err error) {
@@ -273,7 +304,7 @@ func convertLifecycleAction(lcHandler *v1.Handler) (*types.Action, error) {
 			}
 
 			if ps.HTTPGet.Port.String() == "" {
-				return nil, util.TypeValueErrorf(ps.HTTPGet, "URL Port is missing")
+				return nil, util.InvalidInstanceErrorf(ps, "URL Port is missing")
 			}
 
 			host := "localhost"
@@ -449,22 +480,13 @@ func convertContainerPorts(ports []v1.ContainerPort) ([]types.Port, error) {
 		kokiPort := types.Port{}
 
 		kokiPort.Name = port.Name
-		protocol := "TCP"
-		if port.Protocol != "" {
-			if port.Protocol == v1.ProtocolTCP {
-				protocol = "TCP"
-			} else if port.Protocol == v1.ProtocolUDP {
-				protocol = "UDP"
-			} else {
-				return nil, util.TypeValueErrorf(port.Protocol, "Unexpected value %s", port.Protocol)
-			}
-		}
-		kokiPort.Protocol = protocol
+		kokiPort.Protocol = port.Protocol
 		kokiPort.IP = port.HostIP
 		if port.HostPort != 0 {
-			kokiPort.PortMap = fmt.Sprintf("%d:%d", port.HostPort, port.ContainerPort)
-		} else {
-			kokiPort.PortMap = fmt.Sprintf("%d", port.ContainerPort)
+			kokiPort.HostPort = fmt.Sprintf("%d", port.HostPort)
+		}
+		if port.ContainerPort != 0 {
+			kokiPort.ContainerPort = fmt.Sprintf("%d", port.ContainerPort)
 		}
 		p = append(p, kokiPort)
 	}
@@ -481,7 +503,7 @@ func convertTerminationMsgPolicy(p v1.TerminationMessagePolicy) (types.Terminati
 	if p == v1.TerminationMessageFallbackToLogsOnError {
 		return types.TerminationMessageFallbackToLogsOnError, nil
 	}
-	return "", util.TypeValueErrorf(p, "Unexpected value %s", p)
+	return "", util.InvalidInstanceError(p)
 }
 
 func convertEnvVars(env []v1.EnvVar, envFromSrc []v1.EnvFromSource) []types.Env {
@@ -489,13 +511,15 @@ func convertEnvVars(env []v1.EnvVar, envFromSrc []v1.EnvFromSource) []types.Env 
 	for i := range env {
 		v := env[i]
 		if v.ValueFrom == nil {
-			e := types.Env{}
-			e.EnvStr = types.EnvStr(fmt.Sprintf("%s=%s", v.Name, v.Value))
-			kokiEnvs = append(kokiEnvs, e)
+			kokiEnvs = append(kokiEnvs, types.EnvWithVal(types.EnvVal{
+				Key: v.Name,
+				Val: v.Value,
+			}))
 			continue
 		}
-		e := types.Env{}
-		e.EnvStr = types.EnvStr(v.Name)
+
+		e := types.EnvFrom{}
+		e.Key = v.Name
 		if v.ValueFrom.FieldRef != nil {
 			e.From = v.ValueFrom.FieldRef.FieldPath
 		}
@@ -513,12 +537,12 @@ func convertEnvVars(env []v1.EnvVar, envFromSrc []v1.EnvFromSource) []types.Env 
 			required := v.ValueFrom.SecretKeyRef.Optional
 			e.Required = required
 		}
-		kokiEnvs = append(kokiEnvs, e)
+		kokiEnvs = append(kokiEnvs, types.EnvWithFrom(e))
 	}
 	for i := range envFromSrc {
 		v := envFromSrc[i]
-		e := types.Env{}
-		e.EnvStr = types.EnvStr(v.Prefix)
+		e := types.EnvFrom{}
+		e.Key = v.Prefix
 		if v.ConfigMapRef != nil {
 			e.From = fmt.Sprintf("config:%s", v.ConfigMapRef.Name)
 			required := v.ConfigMapRef.Optional
@@ -529,7 +553,7 @@ func convertEnvVars(env []v1.EnvVar, envFromSrc []v1.EnvFromSource) []types.Env 
 			required := v.SecretRef.Optional
 			e.Required = required
 		}
-		kokiEnvs = append(kokiEnvs, e)
+		kokiEnvs = append(kokiEnvs, types.EnvWithFrom(e))
 	}
 	return kokiEnvs
 }
@@ -582,7 +606,7 @@ func convertMountPropagation(p v1.MountPropagationMode) (types.MountPropagation,
 	} else if p == v1.MountPropagationBidirectional {
 		return types.MountPropagationBidirectional, nil
 	}
-	return "", util.TypeValueErrorf(p, "Unexpected value %s", p)
+	return "", util.InvalidInstanceError(p)
 }
 
 func convertAffinity(spec v1.PodSpec) ([]types.Affinity, error) {
@@ -766,7 +790,7 @@ func convertPodWeightedAffinityTerms(prefix string, podSoftAffinity []v1.Weighte
 			for i := range selectorTerm.PodAffinityTerm.LabelSelector.MatchExpressions {
 				expr := selectorTerm.PodAffinityTerm.LabelSelector.MatchExpressions[i]
 				value := strings.Join(expr.Values, ",")
-				op, err := convertOperatorLabelSelector(expr.Operator)
+				op, err := expressions.ConvertOperatorLabelSelector(expr.Operator)
 				if err != nil {
 					return nil, err
 				}
@@ -826,7 +850,7 @@ func convertPodAffinityTerms(prefix string, podHardAffinity []v1.PodAffinityTerm
 			for i := range selectorTerm.LabelSelector.MatchExpressions {
 				expr := selectorTerm.LabelSelector.MatchExpressions[i]
 				value := strings.Join(expr.Values, ",")
-				op, err := convertOperatorLabelSelector(expr.Operator)
+				op, err := expressions.ConvertOperatorLabelSelector(expr.Operator)
 				if err != nil {
 					return nil, err
 				}
@@ -883,26 +907,7 @@ func convertOperator(op v1.NodeSelectorOperator) (string, error) {
 	if op == v1.NodeSelectorOpLt {
 		return "<", nil
 	}
-	return "", util.TypeValueErrorf(op, "Unexpected value %s", op)
-}
-
-func convertOperatorLabelSelector(op metav1.LabelSelectorOperator) (string, error) {
-	if op == "" {
-		return "", nil
-	}
-	if op == metav1.LabelSelectorOpIn {
-		return "=", nil
-	}
-	if op == metav1.LabelSelectorOpNotIn {
-		return "!=", nil
-	}
-	if op == metav1.LabelSelectorOpExists {
-		return "", nil
-	}
-	if op == metav1.LabelSelectorOpDoesNotExist {
-		return "", nil
-	}
-	return "", util.TypeValueErrorf(op, "Unexpected value %s", op)
+	return "", util.InvalidInstanceError(op)
 }
 
 func convertDNSPolicy(dnsPolicy v1.DNSPolicy) (types.DNSPolicy, error) {
@@ -918,7 +923,7 @@ func convertDNSPolicy(dnsPolicy v1.DNSPolicy) (types.DNSPolicy, error) {
 	if dnsPolicy == v1.DNSDefault {
 		return types.DNSDefault, nil
 	}
-	return "", util.TypeValueErrorf(dnsPolicy, "Unexpected value %s", dnsPolicy)
+	return "", util.InvalidInstanceError(dnsPolicy)
 }
 
 func convertHostAliases(aliases []v1.HostAlias) []string {
@@ -984,7 +989,7 @@ func convertRestartPolicy(policy v1.RestartPolicy) (types.RestartPolicy, error) 
 	if policy == v1.RestartPolicyNever {
 		return types.RestartPolicyNever, nil
 	}
-	return "", util.TypeValueErrorf(policy, "Unexpected value %s", policy)
+	return "", util.InvalidInstanceError(policy)
 }
 
 func convertTolerations(tolerations []v1.Toleration) ([]types.Toleration, error) {
@@ -999,7 +1004,7 @@ func convertTolerations(tolerations []v1.Toleration) ([]types.Toleration, error)
 		} else if toleration.Operator == v1.TolerationOpExists {
 			tolExpr = fmt.Sprintf("%s", toleration.Key)
 		} else {
-			return nil, util.TypeValueErrorf(toleration.Operator, "Unexpected value %s", toleration.Operator)
+			return nil, util.InvalidInstanceError(toleration.Operator)
 		}
 		if tolExpr != "" {
 			if toleration.Effect != "" {
@@ -1042,7 +1047,7 @@ func convertPhase(phase v1.PodPhase) (types.PodPhase, error) {
 	if phase == v1.PodUnknown {
 		return types.PodUnknown, nil
 	}
-	return "", util.TypeValueErrorf(phase, "Unexpected value %s", phase)
+	return "", util.InvalidInstanceError(phase)
 }
 
 func convertPodQOSClass(class v1.PodQOSClass) (types.PodQOSClass, error) {
@@ -1058,7 +1063,7 @@ func convertPodQOSClass(class v1.PodQOSClass) (types.PodQOSClass, error) {
 	if class == v1.PodQOSBestEffort {
 		return types.PodQOSBestEffort, nil
 	}
-	return "", util.TypeValueErrorf(class, "Unexpected value %s", class)
+	return "", util.InvalidInstanceError(class)
 }
 
 func convertPodConditions(conditions []v1.PodCondition) ([]types.PodCondition, error) {
@@ -1101,7 +1106,7 @@ func convertPodConditionType(typ v1.PodConditionType) (types.PodConditionType, e
 	if typ == v1.PodReasonUnschedulable {
 		return types.PodReasonUnschedulable, nil
 	}
-	return "", util.TypeValueErrorf(typ, "Unexpected value %s", typ)
+	return "", util.InvalidInstanceError(typ)
 }
 
 func convertConditionStatus(status v1.ConditionStatus) (types.ConditionStatus, error) {
@@ -1117,7 +1122,7 @@ func convertConditionStatus(status v1.ConditionStatus) (types.ConditionStatus, e
 	if status == v1.ConditionUnknown {
 		return types.ConditionUnknown, nil
 	}
-	return "", util.TypeValueErrorf(status, "Unexpected value %s", status)
+	return "", util.InvalidInstanceError(status)
 }
 
 func convertContainerStatuses(initContainerStatuses, containerStatuses []v1.ContainerStatus, kokiContainers []types.Container) error {

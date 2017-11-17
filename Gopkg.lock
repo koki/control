@@ -120,7 +120,7 @@
   branch = "master"
   name = "github.com/koki/short"
   packages = ["converter","converter/converters","converter/converters/affinity","parser","types","util"]
-  revision = "270322699fb652117e008347002f55faac2bfa4e"
+  revision = "c6031ef509337c31452067e50c1b946a2e778c3d"
 
 [[projects]]
   branch = "master"

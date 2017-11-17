@@ -1,29 +1,22 @@
 package converter
 
 import (
-	"fmt"
-
-	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	unstructuredconversion "k8s.io/apimachinery/pkg/conversion/unstructured"
 
 	"github.com/koki/short/parser"
 )
 
-func ConvertToKubeNative(in interface{}) (interface{}, error) {
-	objs, ok := in.([]map[string]interface{})
-	if !ok {
-		return nil, fmt.Errorf("Error casting input object to type map[string]interface{}")
-	}
+func ConvertToKubeNative(objs []map[string]interface{}) ([]interface{}, error) {
 	convertedTypes := []interface{}{}
 	for i := range objs {
 		obj := objs[i]
 
 		typedObj, err := parser.ParseKokiNativeObject(obj)
 		if err != nil {
-			return nil, nil
+			return nil, err
 		}
 
-		kubeObj, err := detectAndConvertFromKokiObj(typedObj)
+		kubeObj, err := DetectAndConvertFromKokiObj(typedObj)
 		if err != nil {
 			return nil, err
 		}
@@ -32,20 +25,11 @@ func ConvertToKubeNative(in interface{}) (interface{}, error) {
 	return convertedTypes, nil
 }
 
-func ConvertToKokiNative(in interface{}) (interface{}, error) {
-	objs, ok := in.([]map[string]interface{})
-	if !ok {
-		return nil, fmt.Errorf("Error casting input object to type map[string]interface{}")
-	}
-
+func ConvertToKokiNative(objs []map[string]interface{}) ([]interface{}, error) {
 	convertedTypes := []interface{}{}
 	for i := range objs {
 		obj := objs[i]
-		u := &unstructured.Unstructured{
-			Object: obj,
-		}
-
-		typedObj, err := creator.New(u.GetObjectKind().GroupVersionKind())
+		typedObj, err := parser.ParseSingleKubeNative(obj)
 		if err != nil {
 			return nil, err
 		}
@@ -54,7 +38,7 @@ func ConvertToKokiNative(in interface{}) (interface{}, error) {
 			return nil, err
 		}
 
-		kokiObj, err := detectAndConvertFromKubeObj(typedObj)
+		kokiObj, err := DetectAndConvertFromKubeObj(typedObj)
 		if err != nil {
 			return nil, err
 		}

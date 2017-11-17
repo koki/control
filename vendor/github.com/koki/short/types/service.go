@@ -2,14 +2,10 @@ package types
 
 import (
 	"encoding/json"
-	"fmt"
 	"net"
-	"strconv"
-	"strings"
 
-	"k8s.io/apimachinery/pkg/util/intstr"
-
-	"github.com/golang/glog"
+	"github.com/koki/short/util"
+	"github.com/koki/short/util/intbool"
 )
 
 type ServiceWrapper struct {
@@ -25,24 +21,46 @@ type Service struct {
 	Annotations map[string]string `json:"annotations,omitempty"`
 
 	// ExternalName services only.
-	ExternalName string `json:"externalName,omitempty"`
+	ExternalName string `json:"cname,omitempty"`
 
 	// ClusterIP services:
+	Type ClusterIPServiceType `json:"type,omitempty"`
 
-	PodLabels   map[string]string      `json:"podLabels,omitempty"`
-	ExternalIPs []IPAddr               `json:"externalIPs,omitempty"`
-	Port        *ServicePort           `json:"port,omitempty"`
-	Ports       map[string]ServicePort `json:"ports,omitempty"`
-	ClusterIP   ClusterIP              `json:"clusterIP,omitempty"`
+	Selector    map[string]string `json:"selector,omitempty"`
+	ExternalIPs []IPAddr          `json:"external_ips,omitempty"`
 
-	PublishNotReadyAddresses bool                  `json:"publishNotReadyAddresses,omitempty"`
-	ExternalTrafficPolicy    ExternalTrafficPolicy `json:"externalTrafficPolicy,omitempty"`
-	ClientIPAffinity         *intstr.IntOrString   `json:"clientIPAffinitySeconds,omitempty"`
+	Port     *ServicePort       `json:"port,omitempty"`
+	NodePort int32              `json:"node_port,omitempty"`
+	Ports    []NamedServicePort `json:"ports,omitempty"`
+
+	ClusterIP ClusterIP `json:"cluster_ip,omitempty"`
+
+	PublishNotReadyAddresses bool                  `json:"unready_endpoints,omitempty"`
+	ExternalTrafficPolicy    ExternalTrafficPolicy `json:"route_policy,omitempty"`
+	ClientIPAffinity         *intbool.IntOrBool    `json:"stickiness,omitempty"`
 
 	// LoadBalancer services:
-
-	LoadBalancer *LoadBalancer `json:"loadBalancer,omitempty"`
+	LoadBalancerIP      IPAddr    `json:"lb_ip,omitempty"`
+	Allowed             []CIDR    `json:"lb_client_ips,omitempty"`
+	HealthCheckNodePort int32     `json:"healthcheck_port,omitempty"`
+	Ingress             []Ingress `json:"endpoints,omitempty"`
 }
+
+// LoadBalancer helper type.
+type LoadBalancer struct {
+	IP                  IPAddr
+	Allowed             []CIDR
+	HealthCheckNodePort int32
+	Ingress             []Ingress
+}
+
+type ClusterIPServiceType string
+
+const (
+	ClusterIPServiceTypeDefault      ClusterIPServiceType = "cluster-ip"
+	ClusterIPServiceTypeNodePort     ClusterIPServiceType = "node-port"
+	ClusterIPServiceTypeLoadBalancer ClusterIPServiceType = "load-balancer"
+)
 
 type IPAddr string
 type CIDR string
@@ -63,157 +81,13 @@ type Ingress struct {
 	Hostname string
 }
 
-type Protocol string
-
-const (
-	ProtocolUDP Protocol = "UDP"
-	ProtocolTCP Protocol = "TCP"
-)
-
-type ServicePort struct {
-	Expose int32
-
-	// PodPort is a port or the name of a containerPort.
-	PodPort intstr.IntOrString
-
-	// NodePort is optional. 0 is empty.
-	NodePort int32
-
-	// Protocol is optional. "" is empty.
-	Protocol Protocol
-}
-
 type ExternalTrafficPolicy string
 
 const (
 	ExternalTrafficPolicyNil     ExternalTrafficPolicy = ""
-	ExternalTrafficPolicyLocal   ExternalTrafficPolicy = "Local"
-	ExternalTrafficPolicyCluster ExternalTrafficPolicy = "Cluster"
+	ExternalTrafficPolicyLocal   ExternalTrafficPolicy = "node-local"
+	ExternalTrafficPolicyCluster ExternalTrafficPolicy = "cluster-wide"
 )
-
-func ClientIPAffinitySeconds(s int) *intstr.IntOrString {
-	x := intstr.FromInt(s)
-	return &x
-}
-
-func ClientIPAffinityDefault() *intstr.IntOrString {
-	x := intstr.FromString("Default")
-	return &x
-}
-
-type LoadBalancer struct {
-	IP                  IPAddr `json:"ip,omitempty"`
-	Allowed             []CIDR `json:"allowed,omitempty"`
-	HealthCheckNodePort int32  `json:"healthCheckNodePort,omitempty"`
-
-	// From Service.Status:
-
-	Ingress []Ingress `json:"ingress,omitempty"`
-}
-
-func (p *ServicePort) InitProtocolFromString(s string) error {
-	switch s {
-	case "TCP":
-		p.Protocol = ProtocolTCP
-	case "UDP":
-		p.Protocol = ProtocolUDP
-	default:
-		glog.Error("Unrecognized protocol for ServicePort")
-		return fmt.Errorf("unrecognized protocol (%s)", s)
-	}
-
-	return nil
-}
-
-func (p *ServicePort) InitNodePortFromString(s string) error {
-	nodePort, err := strconv.ParseInt(s, 10, 32)
-	if err != nil {
-		glog.Error("Unrecognized node port for ServicePort")
-		return fmt.Errorf("unrecognized node port (%s): %s", s, err.Error())
-	}
-	p.NodePort = int32(nodePort)
-
-	return nil
-}
-
-func (p *ServicePort) InitFromString(s string) error {
-	segments := strings.Split(s, ":")
-	l := len(segments)
-	if l < 2 {
-		glog.Error("Sections for Expose & Pod port are both required.")
-		return fmt.Errorf("too few sections in (%s)", s)
-	}
-
-	if l > 4 {
-		glog.Error("Too many sections for ServicePort")
-		return fmt.Errorf("too many sections in (%s)", s)
-	}
-
-	expose, err := strconv.ParseInt(segments[0], 10, 32)
-	if err != nil {
-		glog.Error("Expose should be a port number.")
-		return err
-	}
-
-	p.Expose = int32(expose)
-
-	p.PodPort = intstr.Parse(segments[1])
-
-	if l == 3 {
-		err := p.InitNodePortFromString(segments[2])
-		if err == nil {
-			return nil
-		}
-
-		err = p.InitProtocolFromString(segments[2])
-		if err != nil {
-			return fmt.Errorf("unrecognized node port or protocol (%s)", segments[2])
-		}
-	}
-
-	if l == 4 {
-		err := p.InitNodePortFromString(segments[2])
-		if err != nil {
-			return err
-		}
-
-		err = p.InitProtocolFromString(segments[3])
-		if err != nil {
-			return err
-		}
-	}
-
-	return nil
-}
-
-func (p *ServicePort) UnmarshalJSON(data []byte) error {
-	var s string
-	err := json.Unmarshal(data, &s)
-	if err != nil {
-		glog.Error("Expected a string for ServicePort")
-		return err
-	}
-
-	return p.InitFromString(s)
-}
-
-func (p ServicePort) String() string {
-	s := fmt.Sprintf("%d:%s", p.Expose, p.PodPort.String())
-
-	if p.NodePort != 0 {
-		s = fmt.Sprintf("%s:%d", s, p.NodePort)
-	}
-
-	if p.Protocol != "" {
-		s = fmt.Sprintf("%s:%s", s, p.Protocol)
-	}
-
-	return s
-}
-
-func (p ServicePort) MarshalJSON() ([]byte, error) {
-	return json.Marshal(p.String())
-}
 
 func (i *Ingress) InitFromString(s string) {
 	ip := net.ParseIP(s)
@@ -229,8 +103,7 @@ func (i *Ingress) UnmarshalJSON(data []byte) error {
 	var s string
 	err := json.Unmarshal(data, &s)
 	if err != nil {
-		glog.Error("Expected a string for Ingress")
-		return err
+		return util.InvalidValueErrorf(string(data), "expected a string for Ingress")
 	}
 
 	i.InitFromString(s)
@@ -247,4 +120,15 @@ func (i Ingress) String() string {
 
 func (i Ingress) MarshalJSON() ([]byte, error) {
 	return json.Marshal(i.String())
+}
+
+func (s *Service) SetLoadBalancer(lb *LoadBalancer) {
+	if lb == nil {
+		return
+	}
+
+	s.LoadBalancerIP = lb.IP
+	s.Ingress = lb.Ingress
+	s.Allowed = lb.Allowed
+	s.HealthCheckNodePort = lb.HealthCheckNodePort
 }

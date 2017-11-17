@@ -1,19 +1,17 @@
 deployment:
+  containers:
+  - expose:
+    - 80
+    image: example/example:latest
+    name: example-app
   labels:
     app: example
-  maxSurge: 130%
-  maxUnavailable: 50%
+  max_extra: 2
+  max_unavailable: 2
   name: example-deployment
   replicas: 3
+  selector:
+    app: example
   status:
     replicas: 1
-  template:
-    containers:
-    - expose:
-      - port_map: "80"
-        protocol: TCP
-      image: example/example:latest
-      name: example-app
-    labels:
-      app: example
-  version: extensions/v1beta1
+  version: apps/v1beta1
