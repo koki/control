@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"github.com/koki/control/cli/cmd/ctl"
 	"github.com/spf13/cobra"
 )
 
@@ -21,20 +22,6 @@ var controllerCmd = &cobra.Command{
 
 		_, err = CreateControllerIfNeeded(env)
 		return err
-	},
-}
-
-var createCmd = &cobra.Command{
-	Use:   "create <resource.yaml>",
-	Short: "create a plain kubernetes resource from koki shorthand",
-	Args:  cobra.ExactArgs(1),
-	RunE: func(cmd *cobra.Command, args []string) error {
-		env, err := EnvFromFlags()
-		if err != nil {
-			return err
-		}
-
-		return CreateFromShortFile(env, args[0])
 	},
 }
 
@@ -90,5 +77,12 @@ var purgeCmd = &cobra.Command{
 }
 
 func init() {
-	RootCmd.AddCommand(controllerCmd, createAppCmd, deleteAppCmd, purgeCmd, createCmd)
+	// TODO: create/delete/get work. replace/apply seem to work
+	//       attach doesn't work. exec/run/stop ???
+	RootCmd.AddCommand(controllerCmd, createAppCmd, deleteAppCmd, purgeCmd,
+		ctl.ShortGenericCmd("create", true), ctl.ShortGenericCmd("delete", false),
+		ctl.ShortGenericCmd("get", false), ctl.ShortGenericCmd("replace", true),
+		ctl.ShortGenericCmd("apply", true), ctl.ShortGenericCmd("attach", false),
+		ctl.ShortGenericCmd("exec", false), ctl.ShortGenericCmd("run", false),
+		ctl.ShortGenericCmd("stop", false))
 }

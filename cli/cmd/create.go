@@ -23,7 +23,7 @@ func CreateKubeObj(kubeObj interface{}, env *Env) error {
 	case *v1.Service:
 		_, err = env.Client.CoreV1().Services(env.Namespace).Create(kubeObj)
 	default:
-		err = shortutil.PrettyTypeError(kubeObj, "unsupported k8s type")
+		err = shortutil.TypeErrorf(kubeObj, "unsupported k8s type")
 	}
 
 	return err
