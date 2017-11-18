@@ -8,7 +8,7 @@ import (
 )
 
 func main() {
-	if err := ctl.ShortGenericCmd(os.Args[1:]); err != nil {
+	if err := ctl.RootCmd.Execute(); err != nil {
 		fmt.Println(err)
 		os.Exit(1)
 	}

@@ -9,6 +9,8 @@ import (
 	"os/exec"
 	"strings"
 
+	"github.com/spf13/cobra"
+
 	"github.com/koki/short/client"
 	"github.com/koki/short/parser"
 )
@@ -101,6 +103,15 @@ func ProcessArgs(args []string) (filenames []string, outputFormat string, kubeAr
 	}
 
 	return
+}
+
+var RootCmd = &cobra.Command{
+	Use:                "cli <subcommand>",
+	Short:              "wraps kubectl with support for koki short syntax",
+	DisableFlagParsing: true,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		return ShortGenericCmd(args)
+	},
 }
 
 func ShortGenericCmd(args []string) error {
