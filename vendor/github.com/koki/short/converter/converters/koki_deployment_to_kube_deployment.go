@@ -1,12 +1,9 @@
 package converters
 
 import (
-	"reflect"
-
 	appsv1beta1 "k8s.io/api/apps/v1beta1"
 	appsv1beta2 "k8s.io/api/apps/v1beta2"
 	exts "k8s.io/api/extensions/v1beta1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"github.com/ghodss/yaml"
 
@@ -25,7 +22,7 @@ func Convert_Koki_Deployment_to_Kube_Deployment(deployment *types.DeploymentWrap
 	// Serialize the "generic" kube Deployment.
 	b, err := yaml.Marshal(kubeDeployment)
 	if err != nil {
-		return nil, err
+		return nil, util.InvalidValueErrorf(kubeDeployment, "couldn't serialize 'generic' kube Deployment: %s", err.Error())
 	}
 
 	// Deserialize a versioned kube Deployment using its apiVersion.
@@ -39,17 +36,10 @@ func Convert_Koki_Deployment_to_Kube_Deployment(deployment *types.DeploymentWrap
 		// Perform apps/v1beta1-specific initialization here.
 	case *appsv1beta2.Deployment:
 		// Perform apps/v1beta2-specific initialization here.
-		selector := versionedDeployment.Spec.Selector
-		if selector == nil || reflect.DeepEqual(selector, metav1.LabelSelector{}) {
-			if len(versionedDeployment.Spec.Template.Labels) > 0 {
-				// Fill in a default selector since v1beta2 doesn't have one.
-				versionedDeployment.Spec.Selector = &metav1.LabelSelector{
-					MatchLabels: versionedDeployment.Spec.Template.Labels,
-				}
-			}
-		}
 	case *exts.Deployment:
 		// Perform exts/v1beta1-specific initialization here.
+	default:
+		return nil, util.TypeErrorf(versionedDeployment, "deserialized the manifest, but not as a supported kube Deployment")
 	}
 
 	return versionedDeployment, nil
@@ -62,7 +52,11 @@ func Convert_Koki_Deployment_to_Kube_apps_v1beta2_Deployment(deployment *types.D
 
 	kubeDeployment.Name = kokiDeployment.Name
 	kubeDeployment.Namespace = kokiDeployment.Namespace
-	kubeDeployment.APIVersion = kokiDeployment.Version
+	if len(kokiDeployment.Version) == 0 {
+		kubeDeployment.APIVersion = "extensions/v1beta1"
+	} else {
+		kubeDeployment.APIVersion = kokiDeployment.Version
+	}
 	kubeDeployment.Kind = "Deployment"
 	kubeDeployment.ClusterName = kokiDeployment.Cluster
 	kubeDeployment.Labels = kokiDeployment.Labels

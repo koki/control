@@ -120,7 +120,7 @@
   branch = "master"
   name = "github.com/koki/short"
   packages = ["client","converter","converter/converters","converter/converters/affinity","parser","parser/expressions","types","util","util/floatstr","util/intbool"]
-  revision = "069564616fb23a201b4a3d98253ca603de636ed0"
+  revision = "2b8bb1b8cd5be1a6e2fcb48b739dd15ea8a6fc67"
 
 [[projects]]
   branch = "master"
@@ -223,6 +223,6 @@
 [solve-meta]
   analyzer-name = "dep"
   analyzer-version = 1
-  inputs-digest = "d1e5c7055c6b18c748c91d76b2be09b30fef5a6c35b5a8fe0bd2e88e71d3b43d"
+  inputs-digest = "938e1f8c9270eec6cc2301ddb4a945d755d13790541a255b2a4671740368ccb1"
   solver-name = "gps-cdcl"
   solver-version = 1

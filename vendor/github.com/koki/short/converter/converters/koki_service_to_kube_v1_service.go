@@ -15,7 +15,11 @@ func Convert_Koki_Service_To_Kube_v1_Service(service *types.ServiceWrapper) (*v1
 
 	kubeService.Name = kokiService.Name
 	kubeService.Namespace = kokiService.Namespace
-	kubeService.APIVersion = kokiService.Version
+	if len(kokiService.Version) == 0 {
+		kubeService.APIVersion = "v1"
+	} else {
+		kubeService.APIVersion = kokiService.Version
+	}
 	kubeService.Kind = "Service"
 	kubeService.ClusterName = kokiService.Cluster
 	kubeService.Labels = kokiService.Labels
@@ -36,10 +40,6 @@ func Convert_Koki_Service_To_Kube_v1_Service(service *types.ServiceWrapper) (*v1
 	kubeService.Spec.ClusterIP = string(kokiService.ClusterIP)
 	kubeService.Spec.ExternalIPs = revertExternalIPs(kokiService.ExternalIPs)
 	kubeService.Spec.SessionAffinity, kubeService.Spec.SessionAffinityConfig = revertSessionAffinity(kokiService.ClientIPAffinity)
-	if err != nil {
-		return nil, err
-	}
-
 	kubeService.Spec.PublishNotReadyAddresses = kokiService.PublishNotReadyAddresses
 
 	kubeService.Spec.ExternalTrafficPolicy, err = revertExternalTrafficPolicy(kokiService.ExternalTrafficPolicy)

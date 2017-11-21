@@ -20,7 +20,11 @@ func Convert_Koki_Pod_to_Kube_v1_Pod(pod *types.PodWrapper) (*v1.Pod, error) {
 
 	kubePod.Name = kokiPod.Name
 	kubePod.Namespace = kokiPod.Namespace
-	kubePod.APIVersion = kokiPod.Version
+	if len(kokiPod.Version) == 0 {
+		kubePod.APIVersion = "v1"
+	} else {
+		kubePod.APIVersion = kokiPod.Version
+	}
 	kubePod.Kind = "Pod"
 	kubePod.ClusterName = kokiPod.Cluster
 	kubePod.Labels = kokiPod.Labels
@@ -479,12 +483,12 @@ func revertHostAliases(aliases []string) ([]v1.HostAlias, error) {
 			hostNames := strings.Split(strings.TrimSpace(fields[1]), " ")
 			for i := range hostNames {
 				hostname := hostNames[i]
-				if hostname != "" || hostname != " " {
+				if hostname != "" && hostname != " " {
 					hostAlias.Hostnames = append(hostAlias.Hostnames, hostname)
 				}
 			}
 		} else {
-			return nil, util.InvalidInstanceError(alias)
+			return nil, util.InvalidValueForTypeErrorf(alias, hostAlias, "expected 2 space-separated values")
 		}
 		hostAliases = append(hostAliases, hostAlias)
 	}
@@ -679,7 +683,7 @@ func revertLifecycleAction(action *types.Action) (*v1.Handler, error) {
 	if action.Net != nil {
 		urlStruct, err := url.Parse(action.Net.URL)
 		if err != nil {
-			return nil, err
+			return nil, util.InvalidInstanceErrorf(action, "couldn't parse URL: %s", err)
 		}
 		var host string
 		var port intstr.IntOrString
@@ -744,7 +748,10 @@ func revertVolumeMounts(mounts []types.VolumeMount) []v1.VolumeMount {
 	for i := range mounts {
 		mount := mounts[i]
 		kubeMount := v1.VolumeMount{}
-		kubeMount.MountPropagation = revertMountPropagation(mount.Propagation)
+		propagation := revertMountPropagation(mount.Propagation)
+		if len(*propagation) > 0 {
+			kubeMount.MountPropagation = propagation
+		}
 		kubeMount.MountPath = mount.MountPath
 
 		fields := strings.Split(mount.Store, ":")
@@ -776,7 +783,7 @@ func revertMountPropagation(prop types.MountPropagation) *v1.MountPropagationMod
 	if prop == types.MountPropagationBidirectional {
 		mode = v1.MountPropagationBidirectional
 	}
-	return &mode
+	return nil
 }
 
 func revertImagePullPolicy(policy types.PullPolicy) v1.PullPolicy {
@@ -823,7 +830,7 @@ func revertProbe(probe *types.Probe) (*v1.Probe, error) {
 	if probe.Net != nil {
 		urlStruct, err := url.Parse(probe.Net.URL)
 		if err != nil {
-			return nil, err
+			return nil, util.InvalidInstanceErrorf(probe, "couldn't parse URL: %s", err.Error())
 		}
 		if urlStruct.Scheme == "TCP" {
 			hostPort := urlStruct.Host
@@ -907,7 +914,7 @@ func revertResources(cpu *types.CPU, mem *types.Mem) (v1.ResourceRequirements, e
 		if cpu.Min != "" {
 			q, err := resource.ParseQuantity(cpu.Min)
 			if err != nil {
-				return requirements, err
+				return requirements, util.InvalidInstanceErrorf(cpu, "couldn't parse min quantity: %s", err)
 			}
 			requests[v1.ResourceCPU] = q
 		}
@@ -915,7 +922,7 @@ func revertResources(cpu *types.CPU, mem *types.Mem) (v1.ResourceRequirements, e
 		if cpu.Max != "" {
 			q, err := resource.ParseQuantity(cpu.Max)
 			if err != nil {
-				return requirements, err
+				return requirements, util.InvalidInstanceErrorf(cpu, "couldn't parse max quantity: %s", err)
 			}
 			limits[v1.ResourceCPU] = q
 		}
@@ -925,7 +932,7 @@ func revertResources(cpu *types.CPU, mem *types.Mem) (v1.ResourceRequirements, e
 		if mem.Min != "" {
 			q, err := resource.ParseQuantity(mem.Min)
 			if err != nil {
-				return requirements, err
+				return requirements, util.InvalidInstanceErrorf(mem, "couldn't parse min quantity: %s", err)
 			}
 			requests[v1.ResourceMemory] = q
 		}
@@ -933,7 +940,7 @@ func revertResources(cpu *types.CPU, mem *types.Mem) (v1.ResourceRequirements, e
 		if mem.Max != "" {
 			q, err := resource.ParseQuantity(mem.Max)
 			if err != nil {
-				return requirements, err
+				return requirements, util.InvalidInstanceErrorf(mem, "couldn't parse max quantity: %s", err)
 			}
 			limits[v1.ResourceMemory] = q
 		}
@@ -1004,7 +1011,7 @@ func revertEnv(envs []types.Env) ([]v1.EnvVar, []v1.EnvFromSource, error) {
 				}
 				envsFromSource = append(envsFromSource, envVarFromSrc)
 			} else {
-				return nil, nil, util.InvalidInstanceError(e)
+				return nil, nil, util.InvalidInstanceErrorf(e, "expected either one or two colon-separated values after 'config:'")
 			}
 			continue
 		}
@@ -1039,7 +1046,7 @@ func revertEnv(envs []types.Env) ([]v1.EnvVar, []v1.EnvFromSource, error) {
 				}
 				envsFromSource = append(envsFromSource, envVarFromSrc)
 			} else {
-				return nil, nil, util.InvalidInstanceError(e)
+				return nil, nil, util.InvalidInstanceErrorf(e, "expected either one or two colon-separated values after 'secret:'")
 			}
 			continue
 		}

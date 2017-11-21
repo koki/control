@@ -44,7 +44,7 @@ func ConvertEitherStreamsToKube(eitherStreams []io.ReadCloser) ([]interface{}, e
 		return nil, err
 	}
 
-	kubeObjs := make([]interface{}, len(eitherStreams))
+	kubeObjs := make([]interface{}, len(objs))
 	for i, obj := range objs {
 		kubeObjs[i], err = converter.ConvertOneToKubeNative(obj)
 		if err == nil {
@@ -93,7 +93,7 @@ func WriteObjsToJSONStream(objs []interface{}, jsonStream io.Writer) error {
 			}
 		}
 
-		b, err := json.Marshal(obj)
+		b, err := json.MarshalIndent(obj, "", "  ")
 		if err != nil {
 			return util.InvalidValueErrorf(obj, "couldn't serialize as json")
 		}
