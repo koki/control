@@ -1,0 +1,8 @@
+persistent_volume:
+  modes: rw_once,ro
+  name: pv0001
+  reclaim: Retain
+  storage: 2Gi
+  type: portworx-volume
+  version: v1
+  volume_id: pv0001
